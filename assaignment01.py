@@ -15,4 +15,4 @@ df.head(10)
 #%%
 df.isnull().sum()
 #%%
-
+print('hey')
