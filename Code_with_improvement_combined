@@ -1,0 +1,186 @@
+# importing the dependecies
+import sqlite3
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+# connecting the database & Getting the data frame
+con = sqlite3.connect('./transaction_data.db')
+cur = con.cursor()
+
+
+def get_dataFrame():
+    cur.execute("select * from transaction_data;")
+    db_transactions = cur.fetchall()
+    return db_transactions
+
+db_transactions = get_dataFrame()
+db_transactions = pd.DataFrame(db_transactions)
+
+db_transactions.columns = ["ID", "timestamp", "type", "amount", "nameOrig", "oldbalanceOrig", "newbalanceOrig",
+                           "nameDest", "oldbalanceDest", "newbalanceDest"]
+
+db_transactions["amount"] = db_transactions["amount"].astype("float")
+db_transactions["oldbalanceOrig"] = db_transactions["oldbalanceOrig"].astype("float")
+db_transactions["newbalanceOrig"] = db_transactions["newbalanceOrig"].astype("float")
+db_transactions["oldbalanceDest"] = db_transactions["oldbalanceDest"].astype("float")
+db_transactions["newbalanceDest"] = db_transactions["newbalanceDest"].astype("float")
+
+
+# Description of the Dataset.
+db_transactions.columns # gives the coloms of the dataset
+db_transactions.info()  # gives info about the column types
+db_transactions.head(20) # calling top 20 rows of the Dataset 'db_transactions'
+db_transactions.tail(20) # calling bottom 20 rows of the Dataset 'db_transactions'
+db_transactions.shape  # gives the shape of the datafile
+db_transactions.describe()  # getting the stats of the data file -db_transactions
+
+
+
+
+# chapter 3
+# checking for inconsistencies
+# Description of each variables
+db_transactions["amountOrig"] = abs(db_transactions['oldbalanceOrig'] - db_transactions['newbalanceOrig'])
+db_transactions["amountDest"] = abs(db_transactions['oldbalanceDest'] - db_transactions['newbalanceDest'])
+db_transactions["difamountAmOr"] = round(db_transactions["amount"] - db_transactions["amountOrig"], 5)
+db_transactions["difamountAmDest"] = round(db_transactions["amount"] - db_transactions["amountDest"], 5)
+db_transactions["difamountOD"] = round(db_transactions["amountOrig"] - db_transactions["amountDest"], 5)
+
+db_transactions.head()
+
+print(db_transactions["difamountOD"].unique())
+pd.DataFrame(db_transactions["difamountAmDest"].unique())
+print(db_transactions.groupby("difamountAmOr")["difamountAmOr"].count())
+print(db_transactions.groupby("difamountAmDest")["difamountAmDest"].count())
+print(db_transactions.groupby("difamountOD")["difamountOD"].count())
+
+
+# chapter 4
+# Inconsistencies of €0.01 lost and created from origin and destination accounts. The origin account registered
+# in the column "amount" the same amount transferred by the origin account, the inconsistency found is in the
+# destination account.
+indd1 = db_transactions[(db_transactions.difamountAmOr == 0) & (db_transactions.difamountAmDest != 0)]
+
+print(indd1.groupby("difamountAmOr")["difamountAmOr"].count())
+print(indd1.groupby("difamountAmDest")["difamountAmDest"].count())
+print(indd1.groupby("difamountOD")["difamountOD"].count())
+print(indd1.groupby("difamountOD")["difamountOD"].sum())
+pd.crosstab(indd1["difamountAmDest"] == indd1["difamountOD"], columns='count')
+
+indd1.groupby("difamountOD")["difamountOD"].agg("sum")
+
+indd1.groupby("difamountOD")["difamountOD"].agg("sum")
+
+
+# Inconsistencies of €0.01 (€0.005 difference in the origin->amount->destination)  
+# The origin account register +/- €0.005 in the amount column. The destination account register +/- €0.005 from the amount column
+# at the end the difference in €0.01 which corresponds to the sum of these two registers.
+
+indd2 = db_transactions[(db_transactions.difamountAmOr == -0.005) | (db_transactions.difamountAmDest == 0.005)]
+
+
+print(indd2.groupby("difamountAmOr")["difamountAmOr"].sum())
+print(indd2.groupby("difamountAmDest")["difamountAmDest"].sum())
+print(indd2.groupby("difamountOD")["difamountOD"].sum())
+
+# checking for fraudulent activities.
+# ##### identified 3 fraudulent activities
+# 1) the large frequency of transaction of 0.01
+# 2) Every time 0.01 happens the sender account balances fails to capture them.
+
+
+db_transactions['amount'].value_counts()  # maximum amount transferred, this shows the amount "0.01" is transferred 1372195 times
+db_transactions_010 = db_transactions.loc[db_transactions['amount'] == 0.01]  # creating filtered Data frame to identify the account
+db_transactions_010['nameOrig'].value_counts()  # there are multiple accounts so nothing as conclusive
+db_transactions_010['nameDest'].value_counts()  # the account number C52983754 has 1372194 times received it is fishy
+# it is conclusive this account is fraud account.
+# on looking 0.01 transactions it is clear every time the 0.01 happens moment before a account transfer
+# the amount of 0.01 is transferred but the strange thing is same account comes back the original amount
+
+
+# Large amount of transactions to one account C439737079, Outliers
+# checking the outlier
+db_transactions.loc[db_transactions['amount'] > 80000000]
+# this account is receiving huge amount of money as displayed bellow
+db_transactions.loc[db_transactions['nameDest'] == 'C439737079']
+a = db_transactions.loc[db_transactions['nameDest'] == 'C439737079']  # creating variable a
+# plotting the timing when the account received more money #
+sns.lineplot(y=a['newbalanceDest'], x=a['timestamp'],
+             data=db_transactions.loc[db_transactions[
+                                          'nameDest'] == 'C439737079'])
+# plt.title('accumulation of amount by account(C439737079)')
+plt.title(' Accumulated money over time by account C439737079')
+plt.show()
+
+
+# this the chapter 4.3
+# Include the total amount that C1286084959 accumulates over time between transactions -
+db_transactions.loc[db_transactions['nameOrig'] == 'C1286084959']
+b = db_transactions.loc[db_transactions['nameDest'] == 'C1286084959']  # focusing only on that account so creating new variable
+
+# checking for inconsistencies
+
+# Description of each variables
+db_transactions["amountOrig"] = abs(db_transactions['oldbalanceOrig'] - db_transactions['newbalanceOrig'])
+db_transactions["amountDest"] = abs(db_transactions['oldbalanceDest'] - db_transactions['newbalanceDest'])
+db_transactions["difamountAmOr"] = round(db_transactions["amount"] - db_transactions["amountOrig"], 5)
+db_transactions["difamountAmDest"] = round(db_transactions["amount"] - db_transactions["amountDest"], 5)
+db_transactions["difamountOD"] = round(db_transactions["amountOrig"] - db_transactions["amountDest"], 5)
+
+db_transactions.head()
+
+print(db_transactions["difamountOD"].unique())
+pd.DataFrame(db_transactions["difamountAmDest"].unique())
+print(db_transactions.groupby("difamountAmOr")["difamountAmOr"].count())
+print(db_transactions.groupby("difamountAmDest")["difamountAmDest"].count())
+print(db_transactions.groupby("difamountOD")["difamountOD"].count())
+
+# Inconsistencies of €0.01 lost and created from origin and destination accounts. The origin account registered
+# in the column "amount" the same amount transferred by the origin account, the inconsistency found is in the
+# destination account. this corresponds to chapter 4.1
+indd1 = db_transactions[(db_transactions.difamountAmOr == 0) & (db_transactions.difamountAmDest != 0)]
+
+print(indd1.groupby("difamountAmOr")["difamountAmOr"].count())
+print(indd1.groupby("difamountAmDest")["difamountAmDest"].count())
+print(indd1.groupby("difamountOD")["difamountOD"].count())
+print(indd1.groupby("difamountOD")["difamountOD"].sum())
+pd.crosstab(indd1["difamountAmDest"] == indd1["difamountOD"], columns='count')
+
+indd1.groupby("difamountOD")["difamountOD"].agg("sum")
+
+indd1.groupby("difamountOD")["difamountOD"].agg("sum")
+
+
+# Inconsistencies of €0.01 (€0.005 difference in the origin->amount->destination)  
+# The origin account register +/- €0.005 in the amount column. The destination account register +/- €0.005 from the amount column
+# at the end the difference in €0.01 which corresponds to the sum of these two registers.
+
+indd2 = db_transactions[(db_transactions.difamountAmOr == -0.005) | (db_transactions.difamountAmDest == 0.005)]
+
+
+print(indd2.groupby("difamountAmOr")["difamountAmOr"].sum())
+print(indd2.groupby("difamountAmDest")["difamountAmDest"].sum())
+print(indd2.groupby("difamountOD")["difamountOD"].sum())
+
+
+
+# for plotting the entire transactions over the timestamp
+# filtering the require data
+db_transactions_plot = db_transactions[['amount', 'timestamp', 'oldbalanceOrig', 'newbalanceOrig', 'oldbalanceDest', 'newbalanceDest']]
+# building the plot
+sns.scatterplot(data=db_transactions_plot, y=db_transactions_plot.amount, x=db_transactions_plot.timestamp)
+sns.axes_style('whitegrid')
+plt.title('Transaction amount over time and frequency')
+plt.show()
+
+# for plotting the timestamps with increased transactions
+data = db_transactions.loc[(db_transactions['timestamp'] > 250) & (db_transactions['timestamp'] < 350)]
+sns.scatterplot(data=data, x=data['timestamp'], y=data['amount'])
+plt.title('Most Transaction amount over time between 250 to 350')
+sns.axes_style('whitegrid')
+plt.show()
+
+# Table showing the transactions happening between the timestamp 150 to 500
+data = db_transactions.loc[(db_transactions['timestamp'] > 150) & (db_transactions['timestamp'] < 500)]
+print(data) # this gives the output table
